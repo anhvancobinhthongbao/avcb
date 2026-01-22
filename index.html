@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Thông Báo Khai Giảng AVCB</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root { --blue: #1e40af; --green: #10b981; --gray: #f3f4f6; --input-blue: #0000FF; --orange: #f59e0b; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--gray); padding: 10px; margin: 0; }
+        .container { max-width: 1200px; margin: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 850px) { .container { grid-template-columns: 1fr; } }
+        
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .header-logo { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .header-logo img { height: 50px; width: auto; }
+        
+        .data-actions { display: flex; gap: 10px; margin-bottom: 15px; }
+        .btn-upload { background: #eff6ff; border: 2px dashed var(--blue); padding: 12px; flex: 2; text-align: center; border-radius: 8px; cursor: pointer; color: var(--blue); font-weight: bold; font-size: 0.8rem; }
+        .btn-template { background: #fffbeb; border: 1px solid var(--orange); padding: 12px; flex: 1; text-align: center; border-radius: 8px; cursor: pointer; color: #b45309; font-weight: bold; font-size: 0.8rem; }
+        
+        .field { margin-bottom: 12px; }
+        label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 0.85rem; color: #555; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 0.95rem; color: var(--input-blue); font-weight: 500; }
+        
+        #preview-box { background: #fff; border: 1px solid #ccc; padding: 25px; border-radius: 8px; white-space: pre-wrap; line-height: 1.6; min-height: 500px; font-size: 1rem; }
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        .btn { border: none; padding: 15px; border-radius: 8px; font-weight: bold; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-copy { background: var(--green); grid-column: span 2; }
+        .btn-zalo { background: #0068ff; grid-column: span 2; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <div class="header-logo">
+            <img src="LOGO AVCB FINAL_logoAVCB final-white background logo.jpg" alt="Logo AVCB" onerror="this.style.display='none'">
+            <h2 style="color: var(--blue); margin:0; font-size: 1.2rem;">TRUNG TÂM CÔ BÌNH</h2>
+        </div>
+
+        <div class="data-actions">
+            <div class="btn-upload" onclick="document.getElementById('fileIn').click()">📁 CẬP NHẬT EXCEL<input type="file" id="fileIn" accept=".xlsx, .xls" style="display:none"></div>
+            <div class="btn-template" onclick="downloadTemplate()">📥 FILE MẪU</div>
+        </div>
+
+        <div class="field">
+            <label>Chọn lớp:</label>
+            <select id="classPicker" onchange="loadExcelToForm()"><option value="">-- Chọn lớp --</option></select>
+        </div>
+
+        <hr style="border:0; border-top:1px solid #eee; margin:15px 0;">
+        <div class="field"><label>1. Khóa cũ kết thúc vào:</label><textarea id="editOldClass" rows="2" oninput="render()"></textarea></div>
+        <div class="field"><label>Số ngày nghỉ:</label><input type="text" id="numHolidays" oninput="render()"></div>
+        <div class="field"><label>Chi tiết ngày nghỉ:</label><textarea id="holidayDetail" rows="2" oninput="render()"></textarea></div>
+        <div class="field"><label>5. Nội dung học:</label><textarea id="editContent" rows="2" oninput="render()"></textarea></div>
+        <div class="field"><label>6. Học phí & Tài liệu:</label><textarea id="editFeeInfo" rows="4" oninput="render()"></textarea></div>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size: 1.1rem; color: #555;">XEM TRƯỚC THÔNG BÁO</h2>
+        <div id="preview-box">Vui lòng tải dữ liệu hoặc chọn lớp...</div>
+        <div class="btn-group">
+            <button class="btn btn-copy" onclick="copyOnly()">📋 SAO CHÉP NỘI DUNG</button>
+            <button class="btn btn-zalo" onclick="copyAndOpenZalo()">💬 SAO CHÉP & MỞ ZALO PC</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let rawData = [];
+    window.onload = () => {
+        const saved = localStorage.getItem('avcb_online_data');
+        if (saved) { rawData = JSON.parse(saved); updatePicker(); }
+    };
+
+    function downloadTemplate() {
+        const headers = [["TenLop", "TenKhoaCu", "NgayKetThucCu", "NgayBatDau", "NgayKetThuc", "SoNgayNghi", "ChiTietNgayNghi", "GioHoc", "NoiDung", "HocPhi", "GiaTaiLieu"]];
+        const sample = [["25K5 – S1.2", "25K4-G5.4", "22/01/2026", "02/02/2026", "15/04/2026", "05", "Nghỉ Tết từ 25/1-30/1", "17:30-19:00 Thứ 2-4", "Học tiếp chương trình F&F 2", "1500000", "200000"]];
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(headers.concat(sample));
+        XLSX.utils.book_append_sheet(wb, ws, "AVCB");
+        XLSX.writeFile(wb, "Mau_Data_AVCB.xlsx");
+    }
+
+    document.getElementById('fileIn').addEventListener('change', function(e) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const wb = XLSX.read(new Uint8Array(evt.target.result), {type: 'array'});
+            rawData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+            localStorage.setItem('avcb_online_data', JSON.stringify(rawData));
+            updatePicker();
+            alert("Cập nhật thành công!");
+        };
+        reader.readAsArrayBuffer(e.target.files[0]);
+    });
+
+    function updatePicker() {
+        const sel = document.getElementById('classPicker');
+        sel.innerHTML = '<option value="">-- Chọn lớp --</option>' + 
+            rawData.map((item, i) => `<option value="${i}">${item.TenLop || 'Lớp '+ (i+2)}</option>`).join('');
+    }
+
+    function loadExcelToForm() {
+        const idx = document.getElementById('classPicker').value;
+        if (idx === "") return;
+        const d = rawData[idx];
+        document.getElementById('editOldClass').value = `Khóa học ${d.TenKhoaCu || '...'} hiện tại sẽ kết thúc vào thứ Năm, ngày ${d.NgayKetThucCu || '...'}.`;
+        document.getElementById('numHolidays').value = d.SoNgayNghi || "05";
+        document.getElementById('holidayDetail').value = d.ChiTietNgayNghi || d.NgayNghi || "";
+        document.getElementById('editContent').value = d.NoiDung || "";
+        const hp = parseInt(d.HocPhi) || 0;
+        const tl = parseInt(d.GiaTaiLieu || 0);
+        document.getElementById('editFeeInfo').value = `${(hp + tl).toLocaleString('vi-VN')} vnd, gồm:\n- Học Phí: ${hp.toLocaleString('vi-VN')} vnd.\n- Tài liệu: ${tl.toLocaleString('vi-VN')} vnd.\n- Sách: Dùng tiếp bộ hiện tại.`;
+        render();
+    }
+
+    function render() {
+        const idx = document.getElementById('classPicker').value;
+        if (idx === "") return;
+        const d = rawData[idx];
+        const text = `TRUNG TÂM XIN THÔNG BÁO VỀ THÔNG TIN KHAI GIẢNG KHÓA ĐỢT ${d.TenLop.split(' ')[0]}
+LỚP ${d.TenLop}
+
+1. ${document.getElementById('editOldClass').value}
+2. Khóa học mới từ: ${d.NgayBatDau} đến ${d.NgayKetThuc}. (10 tuần ~ 2.5 tháng)
+3. Ngày nghỉ trong khóa: Có ${document.getElementById('numHolidays').value} ngày nghỉ. (${document.getElementById('holidayDetail').value})
+4. Giờ học: ${d.GioHoc}
+5. Nội dung học
